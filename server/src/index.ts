@@ -47,6 +47,10 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
 });
 
-app.listen(port, () => {
-  console.log(`Expense Tracker API server running on http://localhost:${port}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Expense Tracker API server running on http://localhost:${port}`);
+  });
+}
+
+export default app;
