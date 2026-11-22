@@ -27,55 +27,43 @@ const DEFAULT_CATEGORIES = [
   { name: 'Investasi & Bunga', type: 'INCOME', color: '#a855f7', icon: 'TrendingUp' },
 ];
 
-// GET all wallets with live calculated balance
+// GET all wallets with live calculated balance (single aggregated SQL query)
 walletsRouter.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
 
-    const userWallets = await db
-      .select()
+    const rows = await db
+      .select({
+        id: wallets.id,
+        userId: wallets.userId,
+        name: wallets.name,
+        color: wallets.color,
+        icon: wallets.icon,
+        initialBalance: wallets.initialBalance,
+        createdAt: wallets.createdAt,
+        totalIncome: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'INCOME' THEN ${transactions.amount} ELSE 0 END), 0)`,
+        totalExpense: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'EXPENSE' THEN ${transactions.amount} ELSE 0 END), 0)`,
+      })
       .from(wallets)
+      .leftJoin(
+        transactions,
+        and(eq(transactions.walletId, wallets.id), eq(transactions.userId, userId))
+      )
       .where(eq(wallets.userId, userId))
+      .groupBy(wallets.id)
       .orderBy(wallets.createdAt);
 
-    // Calculate income, expense, and current balance for each wallet
-    const enriched = await Promise.all(
-      userWallets.map(async (w) => {
-        const [inc] = await db
-          .select({ total: sql<string>`COALESCE(SUM(${transactions.amount}), 0)` })
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.userId, userId),
-              eq(transactions.walletId, w.id),
-              eq(transactions.type, 'INCOME')
-            )
-          );
-
-        const [exp] = await db
-          .select({ total: sql<string>`COALESCE(SUM(${transactions.amount}), 0)` })
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.userId, userId),
-              eq(transactions.walletId, w.id),
-              eq(transactions.type, 'EXPENSE')
-            )
-          );
-
-        const totalIncome = parseFloat(inc?.total || '0');
-        const totalExpense = parseFloat(exp?.total || '0');
-        const initial = parseFloat(w.initialBalance || '0');
-        const balance = initial + totalIncome - totalExpense;
-
-        return {
-          ...w,
-          totalIncome,
-          totalExpense,
-          balance,
-        };
-      })
-    );
+    const enriched = rows.map((w) => {
+      const totalIncome = parseFloat(w.totalIncome || '0');
+      const totalExpense = parseFloat(w.totalExpense || '0');
+      const initial = parseFloat(w.initialBalance || '0');
+      return {
+        ...w,
+        totalIncome,
+        totalExpense,
+        balance: initial + totalIncome - totalExpense,
+      };
+    });
 
     return res.json(enriched);
   } catch (err: any) {
@@ -117,7 +105,12 @@ walletsRouter.post('/', async (req: AuthenticatedRequest, res: Response) => {
       }))
     );
 
-    return res.status(201).json(created);
+    return res.status(201).json({
+      ...created,
+      totalIncome: 0,
+      totalExpense: 0,
+      balance: parseFloat(created.initialBalance || '0'),
+    });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Gagal membuat wallet' });
   }

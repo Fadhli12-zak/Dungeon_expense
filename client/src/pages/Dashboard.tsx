@@ -225,13 +225,14 @@ export const Dashboard: React.FC = () => {
       setFormAmount("");
       setFormNote("");
 
-      await Promise.all([fetchDashboardData(), refreshWallets()]);
-
       showAlert({
         title: "BERHASIL DICATAT",
         message: `Transaksi sebesar Rp ${formatNominalInput(rawAmount)} berhasil disimpan!`,
         type: "success",
       });
+
+      // Refresh dashboard analytics & wallet balances in background
+      void Promise.all([fetchDashboardData(), refreshWallets()]);
     } catch (err: any) {
       showAlert({
         title: "GAGAL MENAMBAH TRANSAKSI",

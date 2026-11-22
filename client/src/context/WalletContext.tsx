@@ -64,8 +64,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const createWallet = async (data: { name: string; color: string; icon: string; initialBalance: number }) => {
     const res = await api.post<Wallet>('/wallets', data);
-    await refreshWallets();
-    return res;
+    const createdWallet: Wallet = {
+      ...res,
+      totalIncome: res.totalIncome ?? 0,
+      totalExpense: res.totalExpense ?? 0,
+      balance: res.balance ?? parseFloat(res.initialBalance || '0'),
+    };
+    setWallets((prev) => [...prev, createdWallet]);
+    return createdWallet;
   };
 
   const updateWallet = async (
@@ -73,16 +79,28 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     data: Partial<{ name: string; color: string; icon: string; initialBalance: number }>
   ) => {
     const res = await api.put<Wallet>(`/wallets/${id}`, data);
-    await refreshWallets();
+    setWallets((prev) =>
+      prev.map((w) => {
+        if (w.id !== id) return w;
+        const initial = parseFloat(res.initialBalance || '0');
+        const totalIncome = w.totalIncome || 0;
+        const totalExpense = w.totalExpense || 0;
+        return {
+          ...w,
+          ...res,
+          balance: initial + totalIncome - totalExpense,
+        };
+      })
+    );
     return res;
   };
 
   const deleteWallet = async (id: string) => {
     await api.delete(`/wallets/${id}`);
+    setWallets((prev) => prev.filter((w) => w.id !== id));
     if (activeWalletId === id) {
       setActiveWalletId(null);
     }
-    await refreshWallets();
   };
 
   const activeWallet = wallets.find((w) => w.id === activeWalletId) || null;

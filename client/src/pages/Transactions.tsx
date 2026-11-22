@@ -187,16 +187,17 @@ export const Transactions: React.FC = () => {
 
       setModalOpen(false);
 
-      await Promise.all([
-        fetchTransactions(),
-        refreshWallets(),
-      ]);
-
       showAlert({
         title: editingId ? "TRANSAKSI DIUPDATE" : "TRANSAKSI DICATAT",
         message: `Transaksi sebesar Rp ${formatNominalInput(rawAmount)} berhasil disimpan!`,
         type: "success",
       });
+
+      // Refresh list and wallet balances in background so UI responds immediately
+      void Promise.all([
+        fetchTransactions(),
+        refreshWallets(),
+      ]);
     } catch (err: any) {
       showAlert({
         title: "GAGAL MENYIMPAN TRANSAKSI",
@@ -217,15 +218,13 @@ export const Transactions: React.FC = () => {
       onConfirm: async () => {
         try {
           await api.delete(`/transactions/${id}`);
-          await Promise.all([
-            fetchTransactions(),
-            refreshWallets(),
-          ]);
+          setTransactions((prev) => prev.filter((t) => t.id !== id));
           showAlert({
             title: "TRANSAKSI DIHAPUS",
             message: "Transaksi telah berhasil dihapus dari catatan.",
             type: "success",
           });
+          void refreshWallets();
         } catch (err: any) {
           showAlert({
             title: "GAGAL MENGHAPUS",

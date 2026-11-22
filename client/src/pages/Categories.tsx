@@ -118,13 +118,16 @@ export const Categories: React.FC = () => {
       };
 
       if (editingId) {
-        await api.put(`/categories/${editingId}`, payload);
+        const updated = await api.put<Category>(`/categories/${editingId}`, payload);
+        setCategories((prev) =>
+          prev.map((c) => (c.id === editingId ? { ...c, ...updated } : c))
+        );
       } else {
-        await api.post('/categories', payload);
+        const created = await api.post<Category>('/categories', payload);
+        setCategories((prev) => [...prev, created]);
       }
 
       setModalOpen(false);
-      await fetchCategories();
     } catch (err: any) {
       showAlert({
         title: 'GAGAL MENYIMPAN',
@@ -145,7 +148,7 @@ export const Categories: React.FC = () => {
       onConfirm: async () => {
         try {
           await api.delete(`/categories/${id}`);
-          await fetchCategories();
+          setCategories((prev) => prev.filter((c) => c.id !== id));
         } catch (err: any) {
           showAlert({
             title: 'GAGAL MENGHAPUS',

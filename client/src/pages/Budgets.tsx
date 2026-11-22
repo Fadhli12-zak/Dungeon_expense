@@ -114,7 +114,7 @@ export const Budgets: React.FC = () => {
       }
 
       setModalOpen(false);
-      await fetchBudgets();
+      void fetchBudgets();
     } catch (err: any) {
       showAlert({
         title: 'GAGAL MENYIMPAN',
@@ -135,7 +135,7 @@ export const Budgets: React.FC = () => {
       onConfirm: async () => {
         try {
           await api.delete(`/budgets/${id}`);
-          await fetchBudgets();
+          setBudgets((prev) => prev.filter((b) => b.id !== id));
           showAlert({
             title: 'TARGET DIHAPUS',
             message: 'Batas anggaran telah berhasil dihapus.',
