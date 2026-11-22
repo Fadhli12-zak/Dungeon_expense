@@ -10,7 +10,7 @@ export const BVA_LIMITS = {
 };
 
 export function formatNominalInput(value: string | number): string {
-  const str = String(value);
+  const str = typeof value === 'number' ? String(Math.round(value)) : String(value);
   const cleanDigits = str.replace(/\D/g, '');
   if (!cleanDigits) return '';
 
@@ -21,6 +21,17 @@ export function formatNominalInput(value: string | number): string {
   }
 
   return new Intl.NumberFormat('id-ID').format(num);
+}
+
+/**
+ * Formats a raw numeric/decimal value from PostgreSQL/API (e.g. "410000.00")
+ * into Indonesian thousand-separated input text ("410.000") without treating ".00" as extra digits.
+ */
+export function formatNominalFromDecimal(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '';
+  const num = typeof value === 'number' ? value : parseFloat(String(value));
+  if (isNaN(num)) return '';
+  return formatNominalInput(Math.round(Math.max(0, num)));
 }
 
 export function parseNominalRaw(formatted: string | number): number {

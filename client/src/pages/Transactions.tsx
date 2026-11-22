@@ -13,6 +13,7 @@ import {
 } from "../utils/export";
 import {
   formatNominalInput,
+  formatNominalFromDecimal,
   parseNominalRaw,
   validateBVAAmount,
 } from "../utils/numberFormat";
@@ -130,7 +131,7 @@ export const Transactions: React.FC = () => {
   const handleOpenEditModal = (t: Transaction) => {
     setEditingId(t.id);
     setFormWalletId(t.walletId);
-    setFormAmount(formatNominalInput(t.amount));
+    setFormAmount(formatNominalFromDecimal(t.amount));
     setFormType(t.type);
     setFormCategoryId(t.categoryId || "");
 

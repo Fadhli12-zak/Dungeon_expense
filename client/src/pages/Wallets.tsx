@@ -4,7 +4,7 @@ import { useAlert } from '../context/AlertContext';
 import { useLanguage } from '../context/LanguageContext';
 import { Wallet } from '../types';
 import { formatCurrency } from '../utils/export';
-import { formatNominalInput, parseNominalRaw } from '../utils/numberFormat';
+import { formatNominalInput, formatNominalFromDecimal, parseNominalRaw } from '../utils/numberFormat';
 import {
   Plus,
   Edit2,
@@ -71,7 +71,7 @@ export const Wallets: React.FC = () => {
     setEditingId(w.id);
     setFormName(w.name);
     setFormColor(w.color);
-    setFormInitialBalance(formatNominalInput(w.initialBalance || '0'));
+    setFormInitialBalance(formatNominalFromDecimal(w.initialBalance || '0'));
     setModalOpen(true);
   };
 

@@ -5,7 +5,7 @@ import { useAlert } from '../context/AlertContext';
 import { useLanguage } from '../context/LanguageContext';
 import { BudgetLimit, Category } from '../types';
 import { formatCurrency } from '../utils/export';
-import { formatNominalInput, parseNominalRaw, validateBVAAmount } from '../utils/numberFormat';
+import { formatNominalInput, formatNominalFromDecimal, parseNominalRaw, validateBVAAmount } from '../utils/numberFormat';
 import { Plus, Trash2, Edit2, AlertTriangle, CheckCircle2, Layers, ChevronDown } from 'lucide-react';
 
 export const Budgets: React.FC = () => {
@@ -67,7 +67,7 @@ export const Budgets: React.FC = () => {
   const handleOpenEdit = (b: BudgetLimit) => {
     setEditingId(b.id);
     setFormWalletId(b.walletId || '');
-    setFormAmount(formatNominalInput(b.targetAmount));
+    setFormAmount(formatNominalFromDecimal(b.targetAmount));
     setFormType(b.type);
     setFormPeriod(b.period);
     setFormCategoryId(b.categoryId || '');
