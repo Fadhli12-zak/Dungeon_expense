@@ -17,9 +17,27 @@ import {
 } from 'lucide-react';
 
 const PRESET_COLORS = [
-  '#000000', '#222222', '#444444', '#666666',
-  '#888888', '#AAAAAA', '#CCCCCC', '#FFFFFF',
+  // Monokrom
+  '#000000', '#444444', '#888888', '#FFFFFF',
+  // Hangat (Merah, Oranye, Kuning)
+  '#DC2626', '#EF4444', '#F97316', '#EA580C',
+  '#F59E0B', '#EAB308', '#FACC15', '#92400E',
+  // Segar (Hijau, Teal, Cyan)
+  '#84CC16', '#22C55E', '#16A34A', '#10B981',
+  '#14B8A6', '#06B6D4', '#0EA5E9', '#3B82F6',
+  // Dingin & Cerah (Biru, Ungu, Pink)
+  '#2563EB', '#4F46E5', '#8B5CF6', '#A855F7',
+  '#D946EF', '#EC4899', '#F43F5E', '#BE123C',
 ];
+
+const isLightColor = (hex: string): boolean => {
+  const clean = hex.replace('#', '');
+  if (clean.length !== 6) return false;
+  const r = parseInt(clean.substring(0, 2), 16);
+  const g = parseInt(clean.substring(2, 4), 16);
+  const b = parseInt(clean.substring(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 160;
+};
 
 export const Wallets: React.FC = () => {
   const {
@@ -346,20 +364,37 @@ export const Wallets: React.FC = () => {
 
               {/* Color Presets */}
               <div>
-                <label className="block font-pixel text-[8px] text-[var(--text-muted)] mb-1.5 uppercase">
-                  {t("field_wallet_color")}
-                </label>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block font-pixel text-[8px] text-[var(--text-muted)] uppercase">
+                    {t("field_wallet_color")}
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer font-mono text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                    <span>CUSTOM:</span>
+                    <input
+                      type="color"
+                      value={formColor}
+                      onChange={(e) => setFormColor(e.target.value.toUpperCase())}
+                      className="h-5 w-7 cursor-pointer border-2 border-[var(--border-color)] bg-transparent p-0"
+                    />
+                    <span className="uppercase">{formColor}</span>
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
                   {PRESET_COLORS.map((col) => (
                     <button
                       key={col}
                       type="button"
                       onClick={() => setFormColor(col)}
-                      className="h-6 w-6 border-2 border-[var(--border-color)] flex items-center justify-center transition"
+                      title={col}
+                      className={`h-6 w-6 border-2 flex items-center justify-center transition ${
+                        formColor.toUpperCase() === col
+                          ? 'border-[var(--text-primary)] scale-110 shadow-[var(--glow-shadow-sm)]'
+                          : 'border-[var(--border-color)] hover:scale-105'
+                      }`}
                       style={{ backgroundColor: col }}
                     >
-                      {formColor === col && (
-                        <Check className={`h-3 w-3 ${col === '#FFFFFF' || col === '#CCCCCC' ? 'text-black' : 'text-white'} stroke-[3]`} />
+                      {formColor.toUpperCase() === col && (
+                        <Check className={`h-3 w-3 ${isLightColor(col) ? 'text-black' : 'text-white'} stroke-[3]`} />
                       )}
                     </button>
                   ))}
