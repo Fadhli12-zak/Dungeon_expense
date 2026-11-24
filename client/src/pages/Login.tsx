@@ -1,15 +1,47 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Sparkles, Lock, Mail, ArrowRight, AlertCircle, ShieldAlert } from 'lucide-react';
+import {
+  Sparkles,
+  Lock,
+  Mail,
+  ArrowRight,
+  AlertCircle,
+  ShieldAlert,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+interface LoginFieldErrors {
+  email?: string;
+  password?: string;
+}
+
+interface LoginLocationState {
+  registered?: boolean;
+  email?: string;
+  message?: string;
+}
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = (location.state as LoginLocationState | null) || null;
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(locationState?.email || '');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
+  const [successNotice, setSuccessNotice] = useState(
+    locationState?.registered
+      ? locationState.message || 'Akun berhasil dibuat! Silakan masuk menggunakan email dan password kamu.'
+      : ''
+  );
   const [loading, setLoading] = useState(false);
 
   // Rate Limiting & Throttling Lockout State
@@ -33,24 +65,74 @@ export const Login: React.FC = () => {
     return () => clearInterval(timer);
   }, [lockoutSeconds]);
 
+  const validateForm = (): boolean => {
+    const errors: LoginFieldErrors = {};
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      errors.email = 'Email wajib diisi.';
+    } else if (!EMAIL_REGEX.test(trimmedEmail)) {
+      errors.email = 'Format email tidak valid. Contoh: nama@domain.com';
+    }
+
+    if (!password) {
+      errors.password = 'Password wajib diisi.';
+    } else if (password.length < 6) {
+      errors.password = 'Password minimal 6 karakter.';
+    }
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setError(errors.email || errors.password || 'Periksa kembali data login kamu.');
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (lockoutSeconds > 0) return;
 
     setError('');
+    setSuccessNotice('');
+
+    if (!validateForm()) return;
+
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email.trim().toLowerCase(), password);
       navigate('/');
     } catch (err: any) {
-      if (err.status === 429 || err.data?.retryAfter) {
-        const seconds = err.data?.retryAfter || 30;
+      const code = err?.data?.code;
+      const status = err?.status;
+
+      if (status === 429 || code === 'RATE_LIMITED' || err?.data?.retryAfter) {
+        const seconds = err?.data?.retryAfter || 30;
         setLockoutSeconds(seconds);
+        setFieldErrors({});
         setError(
           `AKUN TERKUNCI! 3x gagal berturut-turut. Tunggu ${seconds} detik sebelum mencoba lagi.`
         );
+      } else if (code === 'EMAIL_NOT_FOUND') {
+        const msg = err.message || 'Email tidak terdaftar. Periksa kembali email kamu atau daftar akun baru.';
+        setFieldErrors({ email: 'Email tidak terdaftar.' });
+        setError(msg);
+      } else if (code === 'WRONG_PASSWORD') {
+        const msg = err.message || 'Password salah. Periksa kembali password kamu.';
+        setFieldErrors({ password: 'Password salah.' });
+        setError(msg);
+      } else if (code === 'EMAIL_REQUIRED' || code === 'INVALID_EMAIL') {
+        setFieldErrors({ email: err.message });
+        setError(err.message);
+      } else if (code === 'PASSWORD_REQUIRED' || code === 'PASSWORD_TOO_SHORT' || code === 'PASSWORD_TOO_LONG') {
+        setFieldErrors({ password: err.message });
+        setError(err.message);
+      } else if (!status) {
+        setError('Tidak dapat terhubung ke server. Periksa koneksi internet kamu lalu coba lagi.');
+      } else if (status >= 500) {
+        setError('Server sedang mengalami gangguan. Coba beberapa saat lagi.');
       } else {
-        setError(err.message || 'Gagal masuk. Periksa kembali email dan password.');
+        setError(err.message || 'Gagal masuk. Periksa kembali email dan password kamu.');
       }
     } finally {
       setLoading(false);
@@ -75,6 +157,14 @@ export const Login: React.FC = () => {
           </p>
         </div>
 
+        {/* Success Notice after Register */}
+        {successNotice && (
+          <div className="mb-5 p-3 border-2 border-green-600 bg-green-950/15 flex items-start gap-2 text-green-600 font-mono text-xs">
+            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>{successNotice}</span>
+          </div>
+        )}
+
         {/* Lockout Banner (HTTP 429 Rate Limit) */}
         {lockoutSeconds > 0 && (
           <div className="mb-5 p-3.5 border-2 border-red-600 bg-red-950/20 text-red-600 font-mono text-xs flex items-start gap-2.5 animate-pulse">
@@ -98,45 +188,74 @@ export const Login: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div>
             <label className="block font-pixel text-[9px] text-[var(--text-muted)] mb-1 uppercase">
               Adventurer Email
             </label>
-            <div className="flex border-2 border-[var(--border-color)] bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)]">
+            <div
+              className={`flex border-2 bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)] ${
+                fieldErrors.email ? 'border-[var(--danger-color)]' : 'border-[var(--border-color)]'
+              }`}
+            >
               <span className="px-3 py-2 bg-[var(--bg-card-subtle)] border-r-2 border-[var(--border-color)] text-[var(--text-muted)] flex items-center justify-center shrink-0 select-none">
                 <Mail className="h-4 w-4" />
               </span>
               <input
                 type="email"
-                required
                 disabled={lockoutSeconds > 0}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
+                  if (error) setError('');
+                }}
                 placeholder="name@dungeon.com"
                 className="w-full bg-transparent px-3 py-2 font-mono text-xs text-[var(--text-primary)] outline-none disabled:opacity-50"
               />
             </div>
+            {fieldErrors.email && (
+              <p className="mt-1 font-mono text-[11px] text-[var(--danger-color)]">{fieldErrors.email}</p>
+            )}
           </div>
 
           <div>
             <label className="block font-pixel text-[9px] text-[var(--text-muted)] mb-1 uppercase">
               Secret Passcode
             </label>
-            <div className="flex border-2 border-[var(--border-color)] bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)]">
+            <div
+              className={`flex border-2 bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)] ${
+                fieldErrors.password ? 'border-[var(--danger-color)]' : 'border-[var(--border-color)]'
+              }`}
+            >
               <span className="px-3 py-2 bg-[var(--bg-card-subtle)] border-r-2 border-[var(--border-color)] text-[var(--text-muted)] flex items-center justify-center shrink-0 select-none">
                 <Lock className="h-4 w-4" />
               </span>
               <input
-                type="password"
-                required
+                type={showPassword ? 'text' : 'password'}
                 disabled={lockoutSeconds > 0}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
+                  if (error) setError('');
+                }}
                 placeholder="••••••••"
                 className="w-full bg-transparent px-3 py-2 font-mono text-xs text-[var(--text-primary)] outline-none disabled:opacity-50"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                disabled={lockoutSeconds > 0}
+                className="px-2.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center justify-center shrink-0"
+                title={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
+            {fieldErrors.password && (
+              <p className="mt-1 font-mono text-[11px] text-[var(--danger-color)]">{fieldErrors.password}</p>
+            )}
           </div>
 
           <button

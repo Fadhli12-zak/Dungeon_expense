@@ -1,7 +1,24 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Sparkles, Lock, Mail, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
+import {
+  Sparkles,
+  Lock,
+  Mail,
+  ArrowRight,
+  AlertCircle,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+interface RegisterFieldErrors {
+  email?: string;
+  password?: string;
+  confirmPassword?: string;
+}
 
 export const Register: React.FC = () => {
   const { register } = useAuth();
@@ -9,28 +26,97 @@ export const Register: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<RegisterFieldErrors>({});
   const [loading, setLoading] = useState(false);
+
+  const validateForm = (): boolean => {
+    const errors: RegisterFieldErrors = {};
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      errors.email = 'Email wajib diisi.';
+    } else if (!EMAIL_REGEX.test(trimmedEmail)) {
+      errors.email = 'Format email tidak valid. Contoh: nama@domain.com';
+    } else if (trimmedEmail.length > 255) {
+      errors.email = 'Email terlalu panjang (maksimal 255 karakter).';
+    }
+
+    if (!password) {
+      errors.password = 'Password wajib diisi.';
+    } else if (!password.trim()) {
+      errors.password = 'Password tidak boleh hanya berisi spasi.';
+    } else if (password.length < 6) {
+      errors.password = 'Password minimal 6 karakter.';
+    } else if (password.length > 100) {
+      errors.password = 'Password maksimal 100 karakter.';
+    }
+
+    if (!confirmPassword) {
+      errors.confirmPassword = 'Konfirmasi password wajib diisi.';
+    } else if (password !== confirmPassword) {
+      errors.confirmPassword = 'Konfirmasi password tidak cocok dengan password.';
+    }
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setError(
+        errors.email ||
+          errors.password ||
+          errors.confirmPassword ||
+          'Periksa kembali data pendaftaran kamu.'
+      );
+      return false;
+    }
+    return true;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (password !== confirmPassword) {
-      setError('Konfirmasi password tidak cocok');
-      return;
-    }
-    if (password.length < 6) {
-      setError('Password minimal 6 karakter');
-      return;
-    }
+    if (!validateForm()) return;
 
+    const normalizedEmail = email.trim().toLowerCase();
     setLoading(true);
     try {
-      await register(email, password);
-      navigate('/');
+      await register(normalizedEmail, password);
+      navigate('/login', {
+        replace: true,
+        state: {
+          registered: true,
+          email: normalizedEmail,
+          message: 'Akun berhasil dibuat! Silakan masuk menggunakan email dan password kamu.',
+        },
+      });
     } catch (err: any) {
-      setError(err.message || 'Registrasi gagal. Coba gunakan email lain.');
+      const code = err?.data?.code;
+      const status = err?.status;
+
+      if (status === 409 || code === 'EMAIL_ALREADY_EXISTS') {
+        const msg = err.message || 'Email sudah terdaftar. Silakan masuk atau gunakan email lain.';
+        setFieldErrors({ email: 'Email sudah terdaftar.' });
+        setError(msg);
+      } else if (code === 'EMAIL_REQUIRED' || code === 'INVALID_EMAIL') {
+        setFieldErrors({ email: err.message });
+        setError(err.message);
+      } else if (
+        code === 'PASSWORD_REQUIRED' ||
+        code === 'INVALID_PASSWORD' ||
+        code === 'PASSWORD_TOO_SHORT' ||
+        code === 'PASSWORD_TOO_LONG'
+      ) {
+        setFieldErrors({ password: err.message });
+        setError(err.message);
+      } else if (!status) {
+        setError('Tidak dapat terhubung ke server. Periksa koneksi internet kamu lalu coba lagi.');
+      } else if (status >= 500) {
+        setError('Server sedang mengalami gangguan. Coba beberapa saat lagi.');
+      } else {
+        setError(err.message || 'Registrasi gagal. Periksa kembali data kamu atau gunakan email lain.');
+      }
     } finally {
       setLoading(false);
     }
@@ -61,68 +147,118 @@ export const Register: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div>
             <label className="block font-pixel text-[9px] text-[var(--text-muted)] mb-1 uppercase">
               Adventurer Email
             </label>
-            <div className="flex border-2 border-[var(--border-color)] bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)]">
+            <div
+              className={`flex border-2 bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)] ${
+                fieldErrors.email ? 'border-[var(--danger-color)]' : 'border-[var(--border-color)]'
+              }`}
+            >
               <span className="px-3 py-2 bg-[var(--bg-card-subtle)] border-r-2 border-[var(--border-color)] text-[var(--text-muted)] flex items-center justify-center shrink-0 select-none">
                 <Mail className="h-4 w-4" />
               </span>
               <input
                 type="email"
-                required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
+                  if (error) setError('');
+                }}
                 placeholder="name@dungeon.com"
                 className="w-full bg-transparent px-3 py-2 font-mono text-xs text-[var(--text-primary)] outline-none"
               />
             </div>
+            {fieldErrors.email && (
+              <p className="mt-1 font-mono text-[11px] text-[var(--danger-color)]">{fieldErrors.email}</p>
+            )}
           </div>
 
           <div>
             <label className="block font-pixel text-[9px] text-[var(--text-muted)] mb-1 uppercase">
               Secret Passcode
             </label>
-            <div className="flex border-2 border-[var(--border-color)] bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)]">
+            <div
+              className={`flex border-2 bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)] ${
+                fieldErrors.password ? 'border-[var(--danger-color)]' : 'border-[var(--border-color)]'
+              }`}
+            >
               <span className="px-3 py-2 bg-[var(--bg-card-subtle)] border-r-2 border-[var(--border-color)] text-[var(--text-muted)] flex items-center justify-center shrink-0 select-none">
                 <Lock className="h-4 w-4" />
               </span>
               <input
-                type="password"
-                required
+                type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
+                  if (error) setError('');
+                }}
                 placeholder="Min. 6 characters"
                 className="w-full bg-transparent px-3 py-2 font-mono text-xs text-[var(--text-primary)] outline-none"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="px-2.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center justify-center shrink-0"
+                title={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
+            {fieldErrors.password && (
+              <p className="mt-1 font-mono text-[11px] text-[var(--danger-color)]">{fieldErrors.password}</p>
+            )}
           </div>
 
           <div>
             <label className="block font-pixel text-[9px] text-[var(--text-muted)] mb-1 uppercase">
               Repeat Passcode
             </label>
-            <div className="flex border-2 border-[var(--border-color)] bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)]">
+            <div
+              className={`flex border-2 bg-[var(--bg-card)] shadow-[var(--glow-shadow-sm)] ${
+                fieldErrors.confirmPassword ? 'border-[var(--danger-color)]' : 'border-[var(--border-color)]'
+              }`}
+            >
               <span className="px-3 py-2 bg-[var(--bg-card-subtle)] border-r-2 border-[var(--border-color)] text-[var(--text-muted)] flex items-center justify-center shrink-0 select-none">
                 <CheckCircle2 className="h-4 w-4" />
               </span>
               <input
-                type="password"
-                required
+                type={showConfirmPassword ? 'text' : 'password'}
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  if (fieldErrors.confirmPassword) {
+                    setFieldErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+                  }
+                  if (error) setError('');
+                }}
                 placeholder="Confirm passcode"
                 className="w-full bg-transparent px-3 py-2 font-mono text-xs text-[var(--text-primary)] outline-none"
               />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                className="px-2.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] flex items-center justify-center shrink-0"
+                title={showConfirmPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
+            {fieldErrors.confirmPassword && (
+              <p className="mt-1 font-mono text-[11px] text-[var(--danger-color)]">
+                {fieldErrors.confirmPassword}
+              </p>
+            )}
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="retro-btn-accent w-full mt-2 py-3 px-4 text-center justify-center flex items-center gap-2 text-xs"
+            className="retro-btn-accent w-full mt-2 py-3 px-4 text-center justify-center flex items-center gap-2 text-xs disabled:opacity-60"
           >
             {loading ? 'FORGING...' : 'CREATE ACCOUNT [START]'}
             <ArrowRight className="h-3.5 w-3.5" />

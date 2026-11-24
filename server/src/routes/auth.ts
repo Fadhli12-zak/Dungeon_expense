@@ -1,7 +1,6 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { users, wallets, categories } from '../db/schema.js';
@@ -21,10 +20,33 @@ const getThrottleKey = (req: AuthenticatedRequest, email: string): string => {
   return `${ip}:${email.toLowerCase()}`;
 };
 
-const authSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-});
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const validateAuthInput = (body: any, isRegister = false) => {
+  const email = typeof body?.email === 'string' ? body.email.trim() : '';
+  const password = typeof body?.password === 'string' ? body.password : '';
+
+  if (!email) {
+    return { ok: false as const, code: 'EMAIL_REQUIRED', error: 'Email wajib diisi.' };
+  }
+  if (!emailRegex.test(email) || email.length > 255) {
+    return { ok: false as const, code: 'INVALID_EMAIL', error: 'Format email tidak valid. Contoh: nama@domain.com' };
+  }
+  if (!password) {
+    return { ok: false as const, code: 'PASSWORD_REQUIRED', error: 'Password wajib diisi.' };
+  }
+  if (isRegister && !password.trim()) {
+    return { ok: false as const, code: 'INVALID_PASSWORD', error: 'Password tidak boleh hanya berisi spasi.' };
+  }
+  if (password.length < 6) {
+    return { ok: false as const, code: 'PASSWORD_TOO_SHORT', error: 'Password minimal 6 karakter.' };
+  }
+  if (password.length > 100) {
+    return { ok: false as const, code: 'PASSWORD_TOO_LONG', error: 'Password maksimal 100 karakter.' };
+  }
+
+  return { ok: true as const, email: email.toLowerCase(), password };
+};
 
 const DEFAULT_CATEGORIES = [
   { name: 'Makanan & Minuman', type: 'EXPENSE', color: '#000000', icon: 'PixelBurger' },
@@ -40,25 +62,28 @@ const DEFAULT_CATEGORIES = [
 
 authRouter.post('/register', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const parse = authSchema.safeParse(req.body);
-    if (!parse.success) {
-      return res.status(400).json({ error: 'Format email tidak valid atau password minimal 6 karakter' });
+    const validated = validateAuthInput(req.body, true);
+    if (!validated.ok) {
+      return res.status(400).json({ error: validated.error, code: validated.code });
     }
 
-    const { email, password } = parse.data;
+    const { email, password } = validated;
 
     const existing = await db.query.users.findFirst({
-      where: eq(users.email, email.toLowerCase()),
+      where: eq(users.email, email),
     });
 
     if (existing) {
-      return res.status(400).json({ error: 'Email sudah terdaftar' });
+      return res.status(409).json({
+        error: 'Email sudah terdaftar. Silakan masuk atau gunakan email lain.',
+        code: 'EMAIL_ALREADY_EXISTS',
+      });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
 
     const [newUser] = await db.insert(users).values({
-      email: email.toLowerCase(),
+      email,
       passwordHash,
     }).returning();
 
@@ -83,11 +108,8 @@ authRouter.post('/register', async (req: AuthenticatedRequest, res: Response) =>
       }))
     );
 
-    const secret = process.env.JWT_SECRET || 'super_secret_jwt_key_change_me_in_production';
-    const token = jwt.sign({ userId: newUser.id, email: newUser.email }, secret, { expiresIn: '7d' });
-
     return res.status(201).json({
-      token,
+      message: 'Registrasi berhasil. Silakan masuk menggunakan akun kamu.',
       user: {
         id: newUser.id,
         email: newUser.email,
@@ -95,18 +117,27 @@ authRouter.post('/register', async (req: AuthenticatedRequest, res: Response) =>
       },
     });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'Registrasi gagal' });
+    if (err?.code === '23505') {
+      return res.status(409).json({
+        error: 'Email sudah terdaftar. Silakan masuk atau gunakan email lain.',
+        code: 'EMAIL_ALREADY_EXISTS',
+      });
+    }
+    return res.status(500).json({
+      error: 'Terjadi kesalahan pada server saat mendaftar. Coba beberapa saat lagi.',
+      code: 'SERVER_ERROR',
+    });
   }
 });
 
 authRouter.post('/login', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const parse = authSchema.safeParse(req.body);
-    if (!parse.success) {
-      return res.status(400).json({ error: 'Email atau password tidak valid' });
+    const validated = validateAuthInput(req.body, false);
+    if (!validated.ok) {
+      return res.status(400).json({ error: validated.error, code: validated.code });
     }
 
-    const { email, password } = parse.data;
+    const { email, password } = validated;
     const throttleKey = getThrottleKey(req, email);
     const now = Date.now();
 
@@ -116,12 +147,13 @@ authRouter.post('/login', async (req: AuthenticatedRequest, res: Response) => {
       const waitSeconds = Math.ceil((throttle.lockedUntil - now) / 1000);
       return res.status(429).json({
         error: `Akun dikunci sementara karena 3x gagal login berturut-turut. Tunggu ${waitSeconds} detik lagi.`,
+        code: 'RATE_LIMITED',
         retryAfter: waitSeconds,
       });
     }
 
     const user = await db.query.users.findFirst({
-      where: eq(users.email, email.toLowerCase()),
+      where: eq(users.email, email),
     });
 
     if (!user) {
@@ -134,12 +166,15 @@ authRouter.post('/login', async (req: AuthenticatedRequest, res: Response) => {
         throttleStore.set(throttleKey, current);
         return res.status(429).json({
           error: 'Gagal login 3 kali berturut-turut. Sistem dikunci selama 30 detik demi keamanan.',
+          code: 'RATE_LIMITED',
           retryAfter: 30,
         });
       }
       throttleStore.set(throttleKey, current);
       return res.status(401).json({
-        error: `Email atau password salah. Sisa kesempatan: ${3 - current.failures}`,
+        error: `Email tidak terdaftar. Periksa kembali email kamu atau daftar akun baru. (Sisa kesempatan: ${3 - current.failures})`,
+        code: 'EMAIL_NOT_FOUND',
+        remainingAttempts: 3 - current.failures,
       });
     }
 
@@ -154,12 +189,15 @@ authRouter.post('/login', async (req: AuthenticatedRequest, res: Response) => {
         throttleStore.set(throttleKey, current);
         return res.status(429).json({
           error: 'Gagal login 3 kali berturut-turut. Sistem dikunci selama 30 detik demi keamanan.',
+          code: 'RATE_LIMITED',
           retryAfter: 30,
         });
       }
       throttleStore.set(throttleKey, current);
       return res.status(401).json({
-        error: `Email atau password salah. Sisa kesempatan: ${3 - current.failures}`,
+        error: `Password salah. Periksa kembali password kamu. (Sisa kesempatan: ${3 - current.failures})`,
+        code: 'WRONG_PASSWORD',
+        remainingAttempts: 3 - current.failures,
       });
     }
 
@@ -204,7 +242,10 @@ authRouter.post('/login', async (req: AuthenticatedRequest, res: Response) => {
       },
     });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message || 'Login gagal' });
+    return res.status(500).json({
+      error: 'Terjadi kesalahan pada server saat login. Coba beberapa saat lagi.',
+      code: 'SERVER_ERROR',
+    });
   }
 });
 
