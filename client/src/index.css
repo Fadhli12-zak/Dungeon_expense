@@ -170,6 +170,13 @@
   box-shadow: var(--glow-shadow-sm);
 }
 
+/* Ensure native dropdown options are always legible (black text on white popup) in dark/spooky theme */
+.theme-spooky select option,
+.theme-spooky select optgroup {
+  color: #000000 !important;
+  background-color: #FFFFFF !important;
+}
+
 .retro-badge {
   display: inline-flex;
   align-items: center;
